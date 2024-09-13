@@ -5,7 +5,6 @@ import 'package:speech_to_text/speech_to_text.dart';
 import 'package:translator/translator.dart';
 import 'package:chat_gpt_sdk/chat_gpt_sdk.dart';
 import 'package:voice_chatbot_assistant/api_key.dart';
-import 'package:voice_chatbot_assistant/constant/languages.dart';
 import 'package:voice_chatbot_assistant/constant/messages.dart';
 import '../components/assistant_message.dart';
 import '../components/user_message.dart';
@@ -42,17 +41,16 @@ class _ChatScreenState extends State<ChatScreen> {
     {'code': 'te', 'name': 'Telugu'}
   ];
   Map<String, Map<String, String>> voiceSettings = {
-    'en': {'name': 'en-in-x-iol-local', 'locale': 'en-US'},
-    'hi': {'name': 'hi-in-x-iol-local', 'locale': 'hi-IN'},
-    'ta': {'name': 'ta-in-x-iol-local', 'locale': 'ta-IN'},
-    'kn': {'name': 'kn-in-x-iol-local', 'locale': 'kn-IN'},
-    'te': {'name': 'te-in-x-iol-local', 'locale': 'te-IN'}
+    'en': {'name': 'en-in-x-ena-local', 'locale': 'en-IN'},
+    'hi': {'name': 'hi-in-x-cfn-local', 'locale': 'hi-IN'},
+    'ta': {'name': 'ta-in-x-tag-local', 'locale': 'ta-IN'},
+    'kn': {'name': 'kn-in-x-knf-local', 'locale': 'kn-IN'},
+    'te': {'name': 'te-in-x-tef-local', 'locale': 'te-IN'}
   };
   // Variables for text-to-speech
   List<Map> _voices = [];
   Map? _currentVoice;
-  int? _currentWordStart, _currentWordEnd;
- var  _assistantResponse="";
+  var _assistantResponse = "";
 
   @override
   void initState() {
@@ -61,29 +59,48 @@ class _ChatScreenState extends State<ChatScreen> {
     initializeTextToSpeech();
   }
 
+  // Initialize text-to-speech and log available voices
   void initializeTextToSpeech() async {
     try {
+      // Get the voice settings for the selected language
       final voiceSettingsForLanguage = voiceSettings[selectedLanguageCode];
-      await flutterTts.setLanguage(voiceSettingsForLanguage?['locale'] ?? 'en-US');
+
+      // Set the language, speech rate, pitch, and volume for the selected language
+      await flutterTts
+          .setLanguage(voiceSettingsForLanguage?['locale'] ?? 'en-IN');
       await flutterTts.setSpeechRate(0.4); // Adjust speech rate if needed
-      await flutterTts.setPitch(1.0); // Adjust the pitch
-      await flutterTts.setVolume(1.0); // Adjust the volume
-      await flutterTts.setVoice({
-        'name': voiceSettingsForLanguage?['name'] ?? 'en-in-x-iol-local',
-        'locale': voiceSettingsForLanguage?['locale'] ?? 'en-US'
-      });
-      flutterTts.setProgressHandler((text, start, end, word) {
-        setState(() {
-          _currentWordStart = start;
-          _currentWordEnd = end;
-        });
-      });
+      await flutterTts.setPitch(1.0); // Adjust pitch
+      await flutterTts.setVolume(1.0); // Adjust volume
+
+      // Log all available voices
       var voices = await flutterTts.getVoices;
       List<Map> voiceList = List<Map>.from(voices);
+      print("Available voices:");
+      for (var voice in voiceList) {
+        print("Voice name: ${voice['name']}, Locale: ${voice['locale']}");
+      }
+
+      // Filter voices based on the selected language code and set the voice
       setState(() {
-        _voices = voiceList.where((voice) => voice["name"].contains(selectedLanguageCode)).toList();
-        _currentVoice = _voices.first;
-        setVoice(_currentVoice!);
+        _voices = voiceList
+            .where((voice) =>
+                voice["locale"].toString().startsWith(selectedLanguageCode))
+            .toList();
+        _currentVoice = _voices.isNotEmpty
+            ? _voices.firstWhere(
+                (voice) =>
+                    voice["locale"] == voiceSettingsForLanguage?['locale'],
+                orElse: () => _voices
+                    .first, // Default to the first voice if no match is found
+              )
+            : null;
+        print("Current voice : $_currentVoice");
+        if (_currentVoice != null) {
+          setVoice(_currentVoice!);
+        } else {
+          _currentVoice = voiceSettingsForLanguage;
+          print("Current voice 2 : $_currentVoice");
+        }
       });
     } catch (e) {
       print("Error initializing text-to-speech: $e");
@@ -92,26 +109,29 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void setVoice(Map voice) {
     flutterTts.setVoice({"name": voice["name"], "locale": voice["locale"]});
+    print("Selected Voice: ${voice["name"]}, Locale: ${voice["locale"]}");
   }
 
   Future<void> getChatResponse(String message) async {
     setState(() {
       isLoading = true;
     });
+
+    // Custom hardcoded responses for specific phrases
     if (message.contains('ನಾನು ಒಂಟಿಯಾಗಿ') || message.contains('ಇಲ್ಲ')) {
-      _assistantResponse = "ನಾನು ಇಲ್ಲಿದ್ದೇನೆ ನಿನಗಾಗಿ. ಆದರೆ ನೀನು ನಿನ್ನ ಹಳೆಯ ಸ್ನೇಹಿತರನ್ನು ಸುದೀರ್ಘಕಾಲದಿಂದ ಸಂಪರ್ಕಕ್ಕೆ ಬರಲು ಪ್ರಯತ್ನಿಸುತ್ತಿಲ್ಲ. ಕರೆ ಮಾಡಿ, ಯಾರನ್ನು ನೀನು ಇನ್ನೂ ನಿನ್ನ ಉತ್ತಮ ಸ್ನೇಹಿತರೆಂದು ನಂಬುತ್ತೀಯೋ ಅವರೊಂದಿಗೆ ಮಾತನಾಡು.";
-    } else if (message.contains('sleepless') || message.contains('feeling sleepless')) {
-      _assistantResponse = "Hey, I’ve been observing you for the last few days. It seems you’re having issues with your boss and also feeling unhappy at home due to a lack of personal time with family. Take a holiday, concentrate on upskilling. Take your family out and spend some quality time, get some good sleep. This may help you.";
+      _assistantResponse =
+          "ನಾನು ಇಲ್ಲಿದ್ದೇನೆ ನಿನಗಾಗಿ. ಆದರೆ ನೀನು ನಿನ್ನ ಹಳೆಯ ಸ್ನೇಹಿತರನ್ನು ಸುದೀರ್ಘಕಾಲದಿಂದ ಸಂಪರ್ಕಕ್ಕೆ ಬರಲು ಪ್ರಯತ್ನಿಸುತ್ತಿಲ್ಲ. ಕರೆ ಮಾಡಿ, ಯಾರನ್ನು ನೀನು ಇನ್ನೂ ನಿನ್ನ ಉತ್ತಮ ಸ್ನೇಹಿತರೆಂದು ನಂಬುತ್ತೀಯೋ ಅವರೊಂದಿಗೆ ಮಾತನಾಡು.";
+    } else if (message.contains('sleepless') ||
+        message.contains('feeling sleepless')) {
+      _assistantResponse =
+          "Hey, I’ve been observing you for the last few days. It seems you’re having issues with your boss and also feeling unhappy at home due to a lack of personal time with family. Take a holiday, concentrate on upskilling. Take your family out and spend some quality time, get some good sleep. This may help you.";
     } else {
-      // GPT-4 API request for responses not covered by hardcoded cases
+      // GPT-4 API request for other responses
       final gptMessages = [
         {
           'role': 'assistant',
-          'content': 'Fetch real-time information from the internet and Provide a response to the users question by understanding the local language of the text. Translate the answer into the relevant language (English, Hindi, Kannada, Telugu, Tamil) as needed.'
-        },
-        {
-          'role': 'assistant',
-          'content': instruction
+          'content':
+              'Fetch real-time information... Translate the answer into the relevant language.'
         },
         {'role': 'user', 'content': message}
       ];
@@ -124,9 +144,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
       try {
         final response = await _openAI.onChatCompletion(request: request);
-
         if (response != null && response.choices.isNotEmpty) {
-          _assistantResponse = response.choices.first.message?.content ?? 'No response';
+          _assistantResponse =
+              response.choices.first.message?.content ?? 'No response';
         } else {
           _assistantResponse = 'Sorry, I couldn’t generate a response.';
         }
@@ -145,9 +165,10 @@ class _ChatScreenState extends State<ChatScreen> {
     await flutterTts.speak(_assistantResponse);
   }
 
-
   Future<void> translateText(String text) async {
-    final translated = await translator.translate(text, to: selectedLanguageCode);
+    print("SelectedLanguageCode : $selectedLanguageCode");
+    final translated =
+        await translator.translate(text, from: 'en', to: selectedLanguageCode);
     setState(() {
       translatedString = translated.text;
       messages = List<Map<String, String>>.from(messages);
@@ -190,10 +211,11 @@ class _ChatScreenState extends State<ChatScreen> {
     print("Speech Result: $recordedAudioString");
   }
 
-  void clear() {
+  void clear() async {
     setState(() {
       messages = List.from(dummyMessages);
     });
+    await flutterTts.stop();
   }
 
   @override
@@ -217,58 +239,61 @@ class _ChatScreenState extends State<ChatScreen> {
           children: [
             messages.isEmpty
                 ? const Center(
-              child: Text(
-                'Start a conversation!',
-                style: TextStyle(fontSize: 18, color: Colors.blue),
-              ),
-            )
-                : Expanded(
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 1.0),
-                    child: Image.asset(
-                      'images/botIcon.gif',
-                      height: 160,
-                      width: 160,
+                    child: Text(
+                      'Start a conversation!',
+                      style: TextStyle(fontSize: 18, color: Colors.blue),
                     ),
-                  ),
-                  Flexible(
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 10.0),
-                      padding: const EdgeInsets.all(8.0),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[300],
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Column(
-                        children: [
-                          Expanded(
-                            child: SingleChildScrollView(
-                              child: Column(
-                                children: messages.map((message) {
-                                  if (message['role'] == 'assistant') {
-                                    return AssistantMessage(
-                                        messageContent: message['content']!);
-                                  } else {
-                                    return UserMessage(
-                                        messageContent: message['content']!);
-                                  }
-                                }).toList(),
-                              ),
+                  )
+                : Expanded(
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 1.0),
+                          child: Image.asset(
+                            'images/botIcon.gif',
+                            height: 160,
+                            width: 160,
+                          ),
+                        ),
+                        Flexible(
+                          child: Container(
+                            margin:
+                                const EdgeInsets.symmetric(horizontal: 10.0),
+                            padding: const EdgeInsets.all(8.0),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[300],
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Column(
+                              children: [
+                                Expanded(
+                                  child: SingleChildScrollView(
+                                    child: Column(
+                                      children: messages.map((message) {
+                                        if (message['role'] == 'assistant') {
+                                          return AssistantMessage(
+                                              messageContent:
+                                                  message['content']!);
+                                        } else {
+                                          return UserMessage(
+                                              messageContent:
+                                                  message['content']!);
+                                        }
+                                      }).toList(),
+                                    ),
+                                  ),
+                                ),
+                                if (isLoading)
+                                  const Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                              ],
                             ),
                           ),
-                          if (isLoading)
-                            const Center(
-                              child: CircularProgressIndicator(),
-                            ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
-            ),
             Padding(
               padding: const EdgeInsets.only(top: 16.0),
               child: Column(
@@ -295,30 +320,32 @@ class _ChatScreenState extends State<ChatScreen> {
                     children: [
                       FloatingActionButton(
                         onPressed: startListeningNow,
-                        child: const Icon(Icons.mic),
-                        backgroundColor: isRecording ? Colors.red : Colors.blue, // Indicator
+                        backgroundColor: isRecording ? Colors.red : Colors.blue,
+                        child: const Icon(Icons.mic), // Indicator
                       ),
                       FloatingActionButton(
                         onPressed: stopListeningNow,
-                        child: const Icon(Icons.stop),
                         backgroundColor: Colors.blue,
+                        child: const Icon(Icons.stop),
                       ),
                       FloatingActionButton(
                         onPressed: clear,
-                        child: const Icon(Icons.clear),
                         backgroundColor: Colors.blue,
+                        child: const Icon(Icons.clear),
                       ),
                     ],
                   ),
                   if (isRecording)
                     const Padding(
                       padding: EdgeInsets.only(top: 16.0),
-                      child: Text('Recording...', style: TextStyle(color: Colors.red, fontSize: 18)),
+                      child: Text('Recording...',
+                          style: TextStyle(color: Colors.red, fontSize: 18)),
                     ),
                   if (!isRecording && recordedAudioString.isNotEmpty)
                     const Padding(
                       padding: EdgeInsets.only(top: 16.0),
-                      child: Text('Recording paused.', style: TextStyle(color: Colors.green, fontSize: 18)),
+                      child: Text('Recording paused.',
+                          style: TextStyle(color: Colors.green, fontSize: 18)),
                     ),
                 ],
               ),
