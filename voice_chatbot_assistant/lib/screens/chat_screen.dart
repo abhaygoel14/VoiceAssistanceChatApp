@@ -1,26 +1,34 @@
+import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_tts/flutter_tts.dart'; // Import the text-to-speech package
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:translator/translator.dart';
 import 'package:chat_gpt_sdk/chat_gpt_sdk.dart';
 import 'package:voice_chatbot_assistant/api_key.dart';
+import 'package:voice_chatbot_assistant/constant/languages.dart';
 import 'package:voice_chatbot_assistant/constant/messages.dart';
+import 'package:voice_chatbot_assistant/screens/tts.dart';
 import '../components/assistant_message.dart';
 import '../components/user_message.dart';
+import 'dart:async';
 
 class ChatScreen extends StatefulWidget {
+  const ChatScreen({super.key});
+
   @override
-  _ChatScreenState createState() => _ChatScreenState();
+  State<ChatScreen> createState() => _ChatScreenState();
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  TtsService ttsService = TtsService();
   final SpeechToText speechToTextInstance = SpeechToText();
   final GoogleTranslator translator = GoogleTranslator();
-  final FlutterTts flutterTts = FlutterTts(); // Initialize FlutterTTS
   String recordedAudioString = "";
   String translatedString = "";
   String detectedLanguage = "";
+  Timer? _silenceTimer;
+  bool _isSilenceDetected = false;
 
   final _openAI = OpenAI.instance.build(
     token: apiKey,
@@ -33,90 +41,60 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // List of languages for the user to select
   String selectedLanguageCode = 'en'; // Default language
-  List<Map<String, String>> languages = [
-    {'code': 'en', 'name': 'English'},
-    {'code': 'hi', 'name': 'Hindi'},
-    {'code': 'ta', 'name': 'Tamil'},
-    {'code': 'kn', 'name': 'Kannada'},
-    {'code': 'te', 'name': 'Telugu'}
-  ];
-  Map<String, Map<String, String>> voiceSettings = {
-    'en': {'name': 'en-in-x-ena-local', 'locale': 'en-IN'},
-    'hi': {'name': 'hi-in-x-cfn-local', 'locale': 'hi-IN'},
-    'ta': {'name': 'ta-in-x-tag-local', 'locale': 'ta-IN'},
-    'kn': {'name': 'kn-in-x-knf-local', 'locale': 'kn-IN'},
-    'te': {'name': 'te-in-x-tef-local', 'locale': 'te-IN'}
-  };
-  // Variables for text-to-speech
-  List<Map> _voices = [];
-  Map? _currentVoice;
+  List<Map<String, String>> languages = language;
+  Map<String, Map<String, String>> voiceSettings = voiceSetting;
+
   var _assistantResponse = "";
+  String errorMessage = "";
 
   @override
   void initState() {
     super.initState();
     initializeSpeechToText();
     initializeTextToSpeech();
+    speakDummyMessages();
+  }
+
+  void speakDummyMessages() async {
+    for (var message in messages) {
+      if (message['role'] == 'assistant') {
+        await ttsService.setLanguage('en-IN');
+        // await ttsService.setVoice(voiceSettings['en']!);
+        await ttsService.setSpeechRate(
+            0.4 + Random().nextDouble() * 0.1); // Adjust speech rate if needed
+        await ttsService
+            .setPitch(1.3 + Random().nextDouble() * 0.2); // Adjust pitch
+        await ttsService.setVolume(1.0);
+        await ttsService.speak(message['content']!);
+      }
+    }
   }
 
   // Initialize text-to-speech and log available voices
   void initializeTextToSpeech() async {
     try {
       // Get the voice settings for the selected language
-      final voiceSettingsForLanguage = voiceSettings[selectedLanguageCode];
-
-      // Set the language, speech rate, pitch, and volume for the selected language
-      await flutterTts
-          .setLanguage(voiceSettingsForLanguage?['locale'] ?? 'en-IN');
-      await flutterTts.setSpeechRate(0.4); // Adjust speech rate if needed
-      await flutterTts.setPitch(1.0); // Adjust pitch
-      await flutterTts.setVolume(1.0); // Adjust volume
-
       // Log all available voices
-      var voices = await flutterTts.getVoices;
-      List<Map> voiceList = List<Map>.from(voices);
-      print("Available voices:");
-      for (var voice in voiceList) {
-        print("Voice name: ${voice['name']}, Locale: ${voice['locale']}");
-      }
-
-      // Filter voices based on the selected language code and set the voice
-      setState(() {
-        _voices = voiceList
-            .where((voice) =>
-                voice["locale"].toString().startsWith(selectedLanguageCode))
-            .toList();
-        _currentVoice = _voices.isNotEmpty
-            ? _voices.firstWhere(
-                (voice) =>
-                    voice["locale"] == voiceSettingsForLanguage?['locale'],
-                orElse: () => _voices
-                    .first, // Default to the first voice if no match is found
-              )
-            : null;
-        print("Current voice : $_currentVoice");
-        if (_currentVoice != null) {
-          setVoice(_currentVoice!);
-        } else {
-          _currentVoice = voiceSettingsForLanguage;
-          print("Current voice 2 : $_currentVoice");
-        }
-      });
+      final langSettings = langSetting[selectedLanguageCode];
+      // Set the language, speech rate, pitch, and volume for the selected language
+      await ttsService.setLanguage(langSettings!);
+      await ttsService.setSpeechRate(
+          0.4 + Random().nextDouble() * 0.1); // Adjust speech rate if needed
+      await ttsService
+          .setPitch(1.3 + Random().nextDouble() * 0.1); // Adjust pitch
+      await ttsService.setVolume(1.0); // Adjust volume
     } catch (e) {
-      print("Error initializing text-to-speech: $e");
+      if (kDebugMode) {
+        print("Error initializing text-to-speech: $e");
+      }
     }
-  }
-
-  void setVoice(Map voice) {
-    flutterTts.setVoice({"name": voice["name"], "locale": voice["locale"]});
-    print("Selected Voice: ${voice["name"]}, Locale: ${voice["locale"]}");
   }
 
   Future<void> getChatResponse(String message) async {
     setState(() {
       isLoading = true;
     });
-
+    initializeTextToSpeech();
     // Custom hardcoded responses for specific phrases
     if (message.contains('ನಾನು ಒಂಟಿಯಾಗಿ') || message.contains('ಇಲ್ಲ')) {
       _assistantResponse =
@@ -132,6 +110,11 @@ class _ChatScreenState extends State<ChatScreen> {
           'role': 'assistant',
           'content':
               'Fetch real-time information... Translate the answer into the relevant language.'
+        },
+        {
+          'role': 'assistant',
+          'content':
+              'Provide answer in a clear, concise, and conversational way.Add natural fillers like "um" and "uh huh" to make the conversation flow more organically.'
         },
         {'role': 'user', 'content': message}
       ];
@@ -152,7 +135,9 @@ class _ChatScreenState extends State<ChatScreen> {
         }
       } catch (e) {
         _assistantResponse = 'Error fetching response. Please try again.';
-        print("Error fetching GPT response: $e");
+        if (kDebugMode) {
+          print("Error fetching GPT response: $e");
+        }
       }
     }
 
@@ -162,11 +147,35 @@ class _ChatScreenState extends State<ChatScreen> {
       isLoading = false;
     });
 
-    await flutterTts.speak(_assistantResponse);
+    await ttsService
+        .speak(_assistantResponse); // Using TtsService to speak the response
+  }
+
+  Future<String> detectLanguage(String text) async {
+    // Translate the text to a known language (e.g., English) to infer the source language
+    var translation = await translator.translate(text, to: 'en');
+    // If the text is not in English, the source language is detected by translation
+    return translation.sourceLanguage
+        .toString(); // This will give you the detected language
   }
 
   Future<void> translateText(String text) async {
-    print("SelectedLanguageCode : $selectedLanguageCode");
+    String detectedLanguage = await detectLanguage(text);
+    if (kDebugMode) {
+      print("Detected Language: $detectedLanguage");
+    }
+    for (var lang in languages) {
+      if (lang['name']!.toLowerCase() == detectedLanguage.toLowerCase()) {
+        selectedLanguageCode = lang['code']!;
+        break;
+      } else {
+        selectedLanguageCode = 'en';
+      }
+    }
+    if (kDebugMode) {
+      print("SelectedLanguageCode : $selectedLanguageCode");
+    }
+
     final translated =
         await translator.translate(text, from: 'en', to: selectedLanguageCode);
     setState(() {
@@ -187,16 +196,61 @@ class _ChatScreenState extends State<ChatScreen> {
     FocusScope.of(context).unfocus();
     setState(() {
       isRecording = true;
+      errorMessage = "";
+      _isSilenceDetected = false;
+      _silenceTimer?.cancel();
     });
-    await speechToTextInstance.listen(onResult: onSpeechToTextResult);
+    await speechToTextInstance.listen(
+        onResult: onSpeechToTextResult,
+        listenFor: const Duration(seconds: 15), // Adjust duration if necessary
+        pauseFor: const Duration(
+            seconds: 10), // Time to pause if no speech is detected
+        onSoundLevelChange: (level) {
+          if (kDebugMode) {
+            print("Sound level: $level");
+          }
+          // Reset the timer every time there's noise (i.e., sound level > threshold)
+
+          if (level > 1) {
+            // Adjust threshold if needed
+            // Sound detected, reset timer
+            _silenceTimer?.cancel();
+            _isSilenceDetected = false;
+          } else if (!_isSilenceDetected) {
+            // If silence has not yet been detected
+            _silenceTimer?.cancel(); // Cancel any previous timer
+            _silenceTimer = Timer(const Duration(seconds: 2), () {
+              if (kDebugMode) {
+                print("4 seconds of silence detected, stopping recording...");
+              }
+              setState(() {
+                _isSilenceDetected = true; // Mark silence as detected
+                isRecording = false;
+              });
+              stopListeningNow();
+            });
+          }
+        });
   }
 
   void stopListeningNow() async {
     await speechToTextInstance.stop();
     setState(() {
       isRecording = false;
+      _isSilenceDetected = true;
+      _silenceTimer?.cancel();
     });
-    if (recordedAudioString.isNotEmpty) {
+    if (recordedAudioString.isEmpty) {
+      setState(() {
+        errorMessage =
+            "No speech detected. Please try again."; // Show error if no speech
+      });
+      Future.delayed(const Duration(seconds: 3), () {
+        setState(() {
+          errorMessage = "";
+        });
+      });
+    } else {
       await translateText(recordedAudioString);
       setState(() {
         recordedAudioString = '';
@@ -208,14 +262,24 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() {
       recordedAudioString = recognitionResult.recognizedWords;
     });
-    print("Speech Result: $recordedAudioString");
+    if (kDebugMode) {
+      print("Speech Result: $recordedAudioString");
+    }
   }
 
   void clear() async {
     setState(() {
       messages = List.from(dummyMessages);
+      errorMessage = "";
     });
-    await flutterTts.stop();
+    await ttsService.stop();
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+    speechToTextInstance.stop();
+    ttsService.stop();
   }
 
   @override
@@ -223,11 +287,11 @@ class _ChatScreenState extends State<ChatScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text("Chat Screen"),
+        title: const Text("Chat"),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
-            Navigator.pop(context);
+            Navigator.pushReplacementNamed(context, '/homeScreen');
           },
         ),
         backgroundColor: Colors.white,
@@ -237,6 +301,14 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
+            if (errorMessage.isNotEmpty) // Show error if exists
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8.0),
+                child: Text(
+                  errorMessage,
+                  style: const TextStyle(color: Colors.red, fontSize: 16),
+                ),
+              ),
             messages.isEmpty
                 ? const Center(
                     child: Text(
@@ -250,7 +322,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 1.0),
                           child: Image.asset(
-                            'images/botIcon.gif',
+                            'images/botImage.png',
                             height: 160,
                             width: 160,
                           ),
@@ -298,40 +370,31 @@ class _ChatScreenState extends State<ChatScreen> {
               padding: const EdgeInsets.only(top: 16.0),
               child: Column(
                 children: [
-                  // Language Selection Dropdown
-                  DropdownButton<String>(
-                    value: selectedLanguageCode,
-                    items: languages.map((language) {
-                      return DropdownMenuItem<String>(
-                        value: language['code'],
-                        child: Text(language['name']!),
-                      );
-                    }).toList(),
-                    onChanged: (newValue) {
-                      setState(() {
-                        selectedLanguageCode = newValue!;
-                        initializeTextToSpeech(); // Reinitialize TTS with new language
-                      });
-                    },
-                  ),
                   const SizedBox(height: 10),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      FloatingActionButton(
-                        onPressed: startListeningNow,
-                        backgroundColor: isRecording ? Colors.red : Colors.blue,
-                        child: const Icon(Icons.mic), // Indicator
+                      GestureDetector(
+                        onTap: () {
+                          if (isRecording) {
+                            stopListeningNow();
+                          } else {
+                            startListeningNow();
+                          }
+                        },
+                        child: Image.asset(
+                          isRecording
+                              ? 'images/recordingLogo.gif'
+                              : 'images/recordingIcon.png',
+                          height: 70,
+                          width: 70,
+                        ),
                       ),
-                      FloatingActionButton(
-                        onPressed: stopListeningNow,
-                        backgroundColor: Colors.blue,
-                        child: const Icon(Icons.stop),
-                      ),
-                      FloatingActionButton(
+                      IconButton(
+                        icon: const Icon(Icons.delete),
+                        iconSize: 40,
+                        color: Colors.redAccent,
                         onPressed: clear,
-                        backgroundColor: Colors.blue,
-                        child: const Icon(Icons.clear),
                       ),
                     ],
                   ),

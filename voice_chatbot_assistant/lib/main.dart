@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:voice_chatbot_assistant/screens/chat_screen.dart';
 import 'package:voice_chatbot_assistant/screens/home_screen.dart';
+import 'package:voice_chatbot_assistant/screens/profile_screen.dart';
 import 'package:voice_chatbot_assistant/screens/tts.dart';
 
 void main() {
@@ -21,8 +22,9 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       initialRoute: '/',
       routes: {
-        '/chatScreen': (context) => ChatScreen(),
-        '/tts':(context)=>TtsScreen()
+        '/homeScreen':(context)=>const HomeScreen(),
+        '/chatScreen': (context) => const ChatScreen(),
+        '/profile':(context)=> const ProfileScreen(),
       },
       home: const HomeScreen(),
     );
