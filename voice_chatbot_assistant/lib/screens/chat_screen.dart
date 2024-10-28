@@ -1,11 +1,20 @@
 import 'dart:math';
+import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:translator/translator.dart';
 import 'package:chat_gpt_sdk/chat_gpt_sdk.dart';
 import 'package:voice_chatbot_assistant/api_key.dart';
+import 'package:voice_chatbot_assistant/components/custom_button.dart';
+import 'package:voice_chatbot_assistant/components/pip_camera_box.dart';
+import 'package:voice_chatbot_assistant/components/shopping_dialog_box.dart';
+import 'package:voice_chatbot_assistant/components/smart_house_dialog_box.dart';
+import 'package:voice_chatbot_assistant/components/travel_plans_dialog_box.dart';
+import 'package:voice_chatbot_assistant/components/vehicle_dialog_box.dart';
 import 'package:voice_chatbot_assistant/constant/languages.dart';
 import 'package:voice_chatbot_assistant/constant/messages.dart';
 import 'package:voice_chatbot_assistant/screens/tts.dart';
@@ -29,6 +38,10 @@ class _ChatScreenState extends State<ChatScreen> {
   String detectedLanguage = "";
   Timer? _silenceTimer;
   bool _isSilenceDetected = false;
+  bool _showCamera = false;
+  Offset _cameraPosition = const Offset(100, 100);
+  bool _isCameraAvailable = false;
+  String _errorMessage = '';
 
   final _openAI = OpenAI.instance.build(
     token: apiKey,
@@ -52,6 +65,7 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     initializeSpeechToText();
     initializeTextToSpeech();
+    _checkAndRequestPermission();
     speakDummyMessages();
   }
 
@@ -63,13 +77,57 @@ class _ChatScreenState extends State<ChatScreen> {
         await ttsService.setSpeechRate(
             0.4 + Random().nextDouble() * 0.1); // Adjust speech rate if needed
         await ttsService
-            .setPitch(1.3 + Random().nextDouble() * 0.2); // Adjust pitch
+            .setPitch(1.3 + Random().nextDouble() * 0.4); // Adjust pitch
         await ttsService.setVolume(1.0);
         await ttsService.speak(message['content']!);
       }
     }
   }
+  Future<void> _checkAndRequestPermission() async {
+    PermissionStatus status = await Permission.camera.status;
 
+    if (status.isDenied) {
+      // Request permission if denied
+      status = await Permission.camera.request();
+    }
+
+    if (status.isGranted) {
+      // If permission is granted, check for camera availability
+      _checkCameraAvailability();
+    } else if (status.isPermanentlyDenied) {
+      // If permission is permanently denied, show error
+      setState(() {
+        _errorMessage = "Camera permission is permanently denied. Please enable it in settings.";
+      });
+      openAppSettings(); // Direct user to app settings if permission is permanently denied
+    } else {
+      // Handle other permission states (denied, restricted, etc.)
+      setState(() {
+        _errorMessage = "Camera permission is required to use this feature.";
+      });
+    }
+  }
+  Future<void> _checkCameraAvailability() async {
+    try {
+      final cameras = await availableCameras(); // Check available cameras
+      if (cameras.isNotEmpty) {
+        setState(() {
+          _isCameraAvailable = true; // Camera is available
+          _errorMessage = ''; // Clear error message if camera is available
+        });
+      } else {
+        setState(() {
+          _isCameraAvailable = false; // No camera available
+          _errorMessage = 'No camera available on this device.';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isCameraAvailable = false; // Error handling in case camera access fails
+        _errorMessage = 'Failed to access the camera. Please try again.';
+      });
+    }
+  }
   // Initialize text-to-speech and log available voices
   void initializeTextToSpeech() async {
     try {
@@ -81,7 +139,7 @@ class _ChatScreenState extends State<ChatScreen> {
       await ttsService.setSpeechRate(
           0.4 + Random().nextDouble() * 0.1); // Adjust speech rate if needed
       await ttsService
-          .setPitch(1.3 + Random().nextDouble() * 0.1); // Adjust pitch
+          .setPitch(1.3 + Random().nextDouble() * 0.4); // Adjust pitch
       await ttsService.setVolume(1.0); // Adjust volume
     } catch (e) {
       if (kDebugMode) {
@@ -276,13 +334,6 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   @override
-  void dispose() {
-    super.dispose();
-    speechToTextInstance.stop();
-    ttsService.stop();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
@@ -296,82 +347,126 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         backgroundColor: Colors.white,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            if (errorMessage.isNotEmpty) // Show error if exists
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8.0),
-                child: Text(
-                  errorMessage,
-                  style: const TextStyle(color: Colors.red, fontSize: 16),
-                ),
-              ),
-            messages.isEmpty
-                ? const Center(
+      body: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                if (errorMessage.isNotEmpty) // Show error if exists
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0),
                     child: Text(
-                      'Start a conversation!',
-                      style: TextStyle(fontSize: 18, color: Colors.blue),
-                    ),
-                  )
-                : Expanded(
-                    child: Column(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 1.0),
-                          child: Image.asset(
-                            'images/botImage.png',
-                            height: 160,
-                            width: 160,
-                          ),
-                        ),
-                        Flexible(
-                          child: Container(
-                            margin:
-                                const EdgeInsets.symmetric(horizontal: 10.0),
-                            padding: const EdgeInsets.all(8.0),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[300],
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Column(
-                              children: [
-                                Expanded(
-                                  child: SingleChildScrollView(
-                                    child: Column(
-                                      children: messages.map((message) {
-                                        if (message['role'] == 'assistant') {
-                                          return AssistantMessage(
-                                              messageContent:
-                                                  message['content']!);
-                                        } else {
-                                          return UserMessage(
-                                              messageContent:
-                                                  message['content']!);
-                                        }
-                                      }).toList(),
-                                    ),
-                                  ),
-                                ),
-                                if (isLoading)
-                                  const Center(
-                                    child: CircularProgressIndicator(),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
+                      errorMessage,
+                      style: const TextStyle(color: Colors.red, fontSize: 16),
                     ),
                   ),
-            Padding(
-              padding: const EdgeInsets.only(top: 16.0),
-              child: Column(
-                children: [
-                  const SizedBox(height: 10),
-                  Row(
+                messages.isEmpty
+                    ? const Center(
+                  child: Text(
+                    'Start a conversation!',
+                    style: TextStyle(fontSize: 18, color: Colors.blue),
+                  ),
+                )
+                    : Expanded(
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 1.0),
+                        child: Image.asset(
+                          'images/botImage.png',
+                          height: 160,
+                          width: 160,
+                        ),
+                      ),
+                      Flexible(
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 10.0),
+                          padding: const EdgeInsets.all(8.0),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[300],
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Column(
+                            children: [
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  child: Column(
+                                    children: messages.map((message) {
+                                      if (message['role'] == 'assistant') {
+                                        return Column(
+                                          children: [
+                                            AssistantMessage(
+                                              messageContent:
+                                              message['content']!,
+                                            ),
+                                            const SizedBox(height: 2),
+                                            // Scrollable row for custom buttons
+                                            SingleChildScrollView(
+                                              scrollDirection:
+                                              Axis.horizontal,
+                                              child: Row(
+                                                children: [
+                                                  CustomButton(
+                                                    title: 'Shopping',
+                                                    onPressed: () {
+                                                      shoppingDialogBox(
+                                                          context);
+                                                    },
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  CustomButton(
+                                                    title: 'Smart House',
+                                                    onPressed: () {
+                                                      smartHouseDialogBox(
+                                                          context);
+                                                    },
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  CustomButton(
+                                                    title: 'Travel Plans',
+                                                    onPressed: () {
+                                                      travelPlanDialogBox(
+                                                          context);
+                                                    },
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  CustomButton(
+                                                    title: 'Your Vehicles',
+                                                    onPressed: () {
+                                                      vehicleDialogBox(
+                                                          context);
+                                                    },
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        );
+                                      } else {
+                                        return UserMessage(
+                                          messageContent: message['content']!,
+                                        );
+                                      }
+                                    }).toList(),
+                                  ),
+                                ),
+                              ),
+                              if (isLoading)
+                                const Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 16.0),
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       GestureDetector(
@@ -386,9 +481,25 @@ class _ChatScreenState extends State<ChatScreen> {
                           isRecording
                               ? 'images/recordingLogo.gif'
                               : 'images/recordingIcon.png',
-                          height: 70,
-                          width: 70,
+                          height: 60,
+                          width: 60,
                         ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.camera_alt_rounded),
+                        iconSize: 40,
+                        color: Colors.blueAccent,
+                        onPressed: () async {
+                          if (_isCameraAvailable) {
+                            // Toggle PiP mode if camera is available
+                            setState(() {
+                              _showCamera = !_showCamera;
+                            });
+                          } else {
+                            // If camera is not available, request permission again
+                            await _checkAndRequestPermission();
+                          }
+                        },
                       ),
                       IconButton(
                         icon: const Icon(Icons.delete),
@@ -398,23 +509,39 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                     ],
                   ),
-                  if (isRecording)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 16.0),
-                      child: Text('Recording...',
-                          style: TextStyle(color: Colors.red, fontSize: 18)),
-                    ),
-                  if (!isRecording && recordedAudioString.isNotEmpty)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 16.0),
-                      child: Text('Recording paused.',
-                          style: TextStyle(color: Colors.green, fontSize: 18)),
-                    ),
-                ],
+                ),
+              ],
+            ),
+          ),
+          if (_showCamera && _isCameraAvailable)
+            Positioned(
+              left: _cameraPosition.dx,
+              top: _cameraPosition.dy,
+              child: GestureDetector(
+                onPanUpdate: (details) {
+                  setState(() {
+                    _cameraPosition += details.delta; // Update position when dragged
+                  });
+                },
+                child: const SizedBox(
+                  width: 200,
+                  height: 150,
+                  child: PiPCameraScreen(), // Pass the camera screen
+                ),
               ),
             ),
-          ],
-        ),
+          if (_errorMessage.isNotEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(
+                  _errorMessage,
+                  style: const TextStyle(color: Colors.red, fontSize: 18),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

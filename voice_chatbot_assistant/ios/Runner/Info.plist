@@ -7,6 +7,10 @@
     <key>NSMicrophoneUsageDescription</key>
     <string>Microphone recognition is used because you will speak to me</string>
 	<key>CFBundleDevelopmentRegion</key>
+	<key>NSCameraUsageDescription</key>
+    <string>your usage description here</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>your usage description here</string>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
 	<string>Voice Chatbot Assistant</string>
